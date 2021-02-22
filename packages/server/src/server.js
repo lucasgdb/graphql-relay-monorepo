@@ -12,12 +12,14 @@ import express from 'express';
 import expressPlayground from 'graphql-playground-middleware-express';
 import moment from 'moment-timezone';
 import compression from 'compression';
+import glob from 'glob';
 
 import schema from './modules/schema';
 import auth from './utils/auth';
 import transformErrorToGraphQLError from './utils/transformErrorToGraphQLError';
 import apiServer from './apiServer';
 import knexMigration from './utils/scripts/knexMigration';
+import persistedQueryMiddleware from './middlewares/persistedQueryMiddleware';
 
 const { NODE_ENV, GRAPHQL_PORT, GRAPHQL_BASE_URL } = process.env;
 const isDevelopmentMode = NODE_ENV.toUpperCase() === 'DEVELOPMENT';
@@ -33,6 +35,13 @@ const corsConfig = {
   preflightContinue: false,
   credentials: true,
 };
+
+const files = glob.sync(`${__dirname}/assets/queryMaps/*.json`);
+const queryMaps = files.reduce((queries, file) => {
+  const data = fs.readFileSync(file, 'utf8');
+  const json = JSON.parse(data);
+  return { ...queries, ...json };
+}, {});
 
 const extensions = request => ({ document }) => {
   document.definitions.forEach(({ name }) => {
@@ -81,6 +90,7 @@ graphQLServer.all('/graphql*', jwtAuth.authenticate());
 
 graphQLServer.use(
   '/graphql',
+  persistedQueryMiddleware(queryMaps),
   graphqlHTTP(request => ({
     schema,
     pretty: isDevelopmentMode,
